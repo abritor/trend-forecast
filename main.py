@@ -370,6 +370,34 @@ GRID = [
 DEFAULT = {"m": 8.0, "sd": 1.2, "w": 0.0, "occ": 0.1}
 
 
+def validate_forecast(out):
+    try:
+        counts = [0] * TOP
+        sums = [0.0] * TOP
+        for row in out["probabilities"]:
+            uid = row["universe_id"]
+            place = row["place"]
+            p = row["p"]
+            if type(uid) is not int or type(place) is not int or isinstance(p, bool) or not isinstance(p, (int, float)):
+                raise ValueError("bad probability row")
+            if place < 1 or place > TOP or p < 0 or p > 1:
+                raise ValueError("bad probability row")
+            counts[place - 1] += 1
+            sums[place - 1] += p
+        for k in range(TOP):
+            if counts[k] > 100 or sums[k] > 1:
+                raise ValueError("bad place totals")
+        top10 = out["top10"]
+        if len(top10) != TOP or len(set(top10)) != TOP:
+            raise ValueError("bad top10")
+    except (KeyError, TypeError, AttributeError):
+        raise ValueError("bad forecast")
+
+
+def log(msg):
+    sys.stderr.write(msg + "\n")
+
+
 def main():
     task = {}
     try:
@@ -429,12 +457,13 @@ def main():
             tot /= len(origins)
             if tot > bs:
                 bs, best = tot, params
-        sys.stderr.write("best params %s backtest %.4f\n" % (best, bs))
+        log("best params %s backtest %.4f" % (best, bs))
 
     final_snap = snaps[N - 1]
     cand, f = forecast(H, final_snap, N - 1, best, gaps, prior_for(best["sd"]))
     out = {"probabilities": to_rows(cand, f), "top10": pick_top10(cand, f)}
     os.makedirs(OUT_DIR, exist_ok=True)
+    validate_forecast(out)
     with open(os.path.join(OUT_DIR, "forecast.json"), "w", encoding="utf-8") as fh:
         json.dump(out, fh, separators=(",", ":"))
 
